@@ -8,7 +8,7 @@ import os
 from fastapi.responses import StreamingResponse
 import json
 
-from database import Base, engine
+from database import Base, engine, SessionLocal
 from auth_routes import router as auth_router
 import auth_models  # noqa: F401 - ensures auth tables register with Base
 import models        # noqa: F401 - ensures other tables (e.g. research history) register with Base
@@ -20,8 +20,6 @@ app = FastAPI(
 )
 
 # CORS
-# NOTE: replace with your actual Vercel frontend URL once deployed.
-# allow_origins=["*"] cannot be combined with allow_credentials=True per browser spec.
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 
 app.add_middleware(
@@ -48,6 +46,18 @@ async def health():
     return {
         "status": "healthy"
     }
+
+@app.get("/health/db")
+async def health_db():
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "healthy", "db": "connected"}
+    except Exception as e:
+        return {"status": "unhealthy", "db": "error", "detail": str(e)}
+    finally:
+        db.close()
 
 class QueryRequest(BaseModel):
     query: str
