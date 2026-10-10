@@ -1,12 +1,13 @@
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from graph import graph
 from pydantic import BaseModel
-from utils.pdf_generator import generate_pdf
 import os
-from fastapi.responses import StreamingResponse
 import json
+import traceback
+
+from graph import graph
+from utils.pdf_generator import generate_pdf  # noqa: F401 - kept for PDF report generation
 
 from database import Base, engine, SessionLocal
 from auth_routes import router as auth_router
@@ -20,7 +21,13 @@ app = FastAPI(
 )
 
 # CORS
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+# Strips spaces and trailing slashes so small typos in the env var don't break matching
+ALLOWED_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+print("CORS allowed origins:", ALLOWED_ORIGINS, flush=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,11 +48,13 @@ async def home():
         "message": "Research Assistant API is running"
     }
 
+
 @app.get("/health")
 async def health():
     return {
         "status": "healthy"
     }
+
 
 @app.get("/health/db")
 async def health_db():
@@ -59,8 +68,10 @@ async def health_db():
     finally:
         db.close()
 
+
 class QueryRequest(BaseModel):
     query: str
+
 
 @app.post("/research")
 async def research(request: QueryRequest):
@@ -78,18 +89,27 @@ async def research(request: QueryRequest):
 
     async def event_generator():
         final_state = None
+        try:
+            async for event in graph.astream(state):
+                print(event, flush=True)
 
-        async for event in graph.astream(state):
-            print(event)
+                yield f"data: {json.dumps(event, default=str)}\n\n"
 
-            yield f"data: {json.dumps(event, default=str)}\n\n"
+                for _, value in event.items():
+                    if isinstance(value, dict):
+                        final_state = value
 
-            for _, value in event.items():
-                if isinstance(value, dict):
-                    final_state = value
+            if final_state:
+                yield f"data: {json.dumps({'done': True})}\n\n"
+            else:
+                print("RESEARCH PIPELINE ENDED WITHOUT ANY STATE", flush=True)
+                yield f"data: {json.dumps({'error': 'Pipeline finished without producing a result'})}\n\n"
 
-        if final_state:
-            yield f"data: {json.dumps({'done': True})}\n\n"
+        except Exception as e:
+            # Log the full traceback to Render logs and tell the frontend what went wrong
+            print("RESEARCH PIPELINE FAILED:", flush=True)
+            traceback.print_exc()
+            yield f"data: {json.dumps({'error': f'{type(e).__name__}: {e}'})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -99,10 +119,14 @@ async def research(request: QueryRequest):
             "Connection": "keep-alive",
         },
     )
+
+
 @app.get("/download/{filename}")
 async def download_report(filename: str):
 
-    path = f"reports/{filename}"
+    # basename() blocks paths like "../../etc/passwd"
+    safe_name = os.path.basename(filename)
+    path = os.path.join("reports", safe_name)
 
     if not os.path.exists(path):
         return {"error": "File not found"}
@@ -110,5 +134,5 @@ async def download_report(filename: str):
     return FileResponse(
         path=path,
         media_type="application/pdf",
-        filename=filename
+        filename=safe_name
     )
