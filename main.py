@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import json
+import asyncio
 import traceback
 
 from graph import graph
@@ -40,6 +41,10 @@ app.add_middleware(
 # Creates orbit.db (or Postgres tables) on first run.
 Base.metadata.create_all(bind=engine)
 app.include_router(auth_router)
+
+# How often to send a keep-alive while waiting for slow LLM calls.
+# Proxies in front of Render can drop a stream that stays silent too long.
+HEARTBEAT_SECONDS = 15
 
 
 @app.get("/")
@@ -88,28 +93,54 @@ async def research(request: QueryRequest):
     }
 
     async def event_generator():
+        queue: asyncio.Queue = asyncio.Queue()
+
+        # Runs the LangGraph pipeline in the background and pushes results into the queue
+        async def run_graph():
+            try:
+                async for event in graph.astream(state):
+                    print(event, flush=True)
+                    await queue.put(("event", event))
+                await queue.put(("end", None))
+            except Exception as e:
+                print("RESEARCH PIPELINE FAILED:", flush=True)
+                traceback.print_exc()
+                await queue.put(("error", f"{type(e).__name__}: {e}"))
+
+        task = asyncio.create_task(run_graph())
         final_state = None
+
         try:
-            async for event in graph.astream(state):
-                print(event, flush=True)
+            while True:
+                try:
+                    kind, payload = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_SECONDS)
+                except asyncio.TimeoutError:
+                    # SSE comment line: keeps the connection alive, ignored by event parsers
+                    yield ": keepalive\n\n"
+                    continue
 
-                yield f"data: {json.dumps(event, default=str)}\n\n"
+                if kind == "event":
+                    yield f"data: {json.dumps(payload, default=str)}\n\n"
+                    for _, value in payload.items():
+                        if isinstance(value, dict):
+                            final_state = value
 
-                for _, value in event.items():
-                    if isinstance(value, dict):
-                        final_state = value
+                elif kind == "error":
+                    yield f"data: {json.dumps({'error': payload})}\n\n"
+                    break
 
-            if final_state:
-                yield f"data: {json.dumps({'done': True})}\n\n"
-            else:
-                print("RESEARCH PIPELINE ENDED WITHOUT ANY STATE", flush=True)
-                yield f"data: {json.dumps({'error': 'Pipeline finished without producing a result'})}\n\n"
-
-        except Exception as e:
-            # Log the full traceback to Render logs and tell the frontend what went wrong
-            print("RESEARCH PIPELINE FAILED:", flush=True)
-            traceback.print_exc()
-            yield f"data: {json.dumps({'error': f'{type(e).__name__}: {e}'})}\n\n"
+                else:  # "end"
+                    if final_state:
+                        yield f"data: {json.dumps({'done': True})}\n\n"
+                    else:
+                        print("RESEARCH PIPELINE ENDED WITHOUT ANY STATE", flush=True)
+                        yield f"data: {json.dumps({'error': 'Pipeline finished without producing a result'})}\n\n"
+                    break
+        finally:
+            # If the browser disconnects, stop the pipeline so it doesn't keep spending API calls
+            if not task.done():
+                print("Client disconnected; cancelling research pipeline", flush=True)
+                task.cancel()
 
     return StreamingResponse(
         event_generator(),
@@ -117,6 +148,7 @@ async def research(request: QueryRequest):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )
 
