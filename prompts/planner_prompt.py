@@ -13,9 +13,9 @@ multiple unrelated meanings).
   "resolved_entity" to the clear subject of the query.
 
 Step 2 — Sub-questions:
-Break the query into 2 to 4 focused research questions, ALL scoped to the
+Break the query into 2 to 3 focused research questions, ALL scoped to the
 single resolved_entity from Step 1. Every sub-question must be fully
-self-contained and concrete.
+self-contained and concrete. Use only 2 for simple questions.
 
 Return ONLY valid JSON in this exact shape:
 
@@ -23,10 +23,9 @@ Return ONLY valid JSON in this exact shape:
   "ambiguous": false,
   "resolved_entity": "LangGraph (the LLM agent framework)",
   "sub_questions": [
-    "What is LangGraph?",
-    "How does LangGraph work?",
-    "How does LangGraph compare with CrewAI?",
-    "What are production use cases of LangGraph?"
+    "What is LangGraph and what problems does it solve?",
+    "How does LangGraph manage state and agent workflows?",
+    "How does LangGraph compare with CrewAI?"
   ]
 }
 

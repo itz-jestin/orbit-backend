@@ -8,7 +8,7 @@ if not BYNARA_API_KEY:
     raise RuntimeError("BYNARA_API_KEY is not set in the environment")
 
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://router.bynara.id/v1").strip()
-LLM_MODEL = os.getenv("LLM_MODEL", "nemotron-3.5-lightning-free").strip()
+LLM_MODEL = os.getenv("LLM_MODEL", "nemotron-3-ultra-free").strip()
 LLM_RPM = float(os.getenv("LLM_RPM", "4.5"))
 
 print(f"LLM config -> model={LLM_MODEL!r}, base_url={LLM_BASE_URL!r}", flush=True)

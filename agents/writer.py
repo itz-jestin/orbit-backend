@@ -3,6 +3,34 @@ from state import ResearchState
 from tools.llm import llm
 
 
+def _content_text(content) -> str:
+    if isinstance(content, list):  # some providers return content blocks
+        return "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in content)
+    return str(content or "")
+
+
+def _fallback_report(state: ResearchState) -> str:
+    """Built without the LLM, straight from the research results, so the user
+    still gets the findings if the writer's model call fails."""
+    parts = [
+        "# Introduction",
+        f"This report summarizes web research on: {state['query']}. "
+        "The automated writing step was unavailable, so the research findings "
+        "are presented directly.",
+        "",
+        "# Main Findings",
+    ]
+    for r in state["research_results"]:
+        parts.append(f"## {r['question']}\n{r['answer']}")
+    parts += [
+        "",
+        "# Conclusion",
+        "The findings above are taken directly from the gathered research. "
+        "Please refer to the listed sources for full details.",
+    ]
+    return "\n\n".join(parts)
+
+
 def writer(state: ResearchState):
 
     logger.info("Writer started")
@@ -55,7 +83,7 @@ the revised report.
         prompt = f"""
 You are a professional research report writer.
 
-Using the research below, write a detailed report.
+Using the research below, write a clear, well-structured report.
 
 Research:
 
@@ -70,6 +98,8 @@ STRICT GROUNDING RULES:
   unless that exact claim appears in the Research above. Do not add
   outside knowledge you may know about the topic, even if true — only
   synthesize what is present in the Research.
+- If a question's research failed or found nothing, say so briefly
+  instead of filling the gap.
 
 The report should contain:
 
@@ -86,13 +116,15 @@ Return only the report.
 
     try:
         response = llm.invoke(prompt)
+        report = _content_text(response.content).strip()
+        if not report:
+            raise ValueError("empty report from model")
+        logger.info("Report generated successfully")
     except Exception as e:
-        logger.error(f"LLM call failed in writer: {e}")
-        raise
+        logger.error(f"LLM call failed in writer, building report from research directly: {e}")
+        report = _fallback_report(state)
 
-    logger.info("Report generated successfully")
-
-    state["final_report"] = response.content
+    state["final_report"] = report
 
     logger.info("Writer completed")
 

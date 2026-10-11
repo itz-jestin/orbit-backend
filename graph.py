@@ -1,3 +1,5 @@
+import os
+
 from langgraph.graph import StateGraph, END
 
 from state import ResearchState
@@ -8,17 +10,27 @@ from agents.critic import critic
 from tools.verify import find_ungrounded_claims
 from utils.logger import logger
 
+# Speed settings (change on Render without touching code):
+#   CRITIC_ENABLED=false   -> skip the critic LLM call entirely
+#   ENABLE_REVISIONS=true  -> allow the critic to send the report back for a rewrite
+CRITIC_ENABLED = os.getenv("CRITIC_ENABLED", "true").lower() == "true"
+ENABLE_REVISIONS = os.getenv("ENABLE_REVISIONS", "false").lower() == "true"
+
 
 def should_retry(state):
     critique = state["critique"]
     retries = state["retries"]
 
     print("Retries:", retries)
-    print("Approved:", critique["approved"])
+    print("Approved:", critique.get("approved"))
 
-    if critique["approved"]:
+    # Fast mode (default): the critic only scores the report, never triggers rewrites
+    if not ENABLE_REVISIONS:
+        return "done"
+
+    if critique.get("approved"):
         has_feedback = bool(critique.get("feedback")) or bool(critique.get("question_issues"))
-        if has_feedback and not state.get("revised", False):
+        if has_feedback and not state.get("revised", False) and not critique.get("review_skipped"):
             return "revise"
         return "done"
 
@@ -26,6 +38,10 @@ def should_retry(state):
         return "done"
 
     return "retry"
+
+
+def after_grounding(state):
+    return "critic" if CRITIC_ENABLED else "done"
 
 
 def grounding_check(state: ResearchState):
@@ -52,12 +68,18 @@ builder.set_entry_point("planner")
 builder.add_edge("planner", "researcher")
 builder.add_edge("researcher", "writer")
 builder.add_edge("writer", "grounding_check")
-builder.add_edge("grounding_check", "critic")
+
+builder.add_conditional_edges(
+    "grounding_check",
+    after_grounding,
+    {"critic": "critic", "done": END},
+)
 
 builder.add_conditional_edges(
     "critic",
     should_retry,
-    {   "done": END,
+    {
+        "done": END,
         "retry": "researcher",
         "revise": "writer",
     },
