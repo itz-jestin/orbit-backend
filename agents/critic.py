@@ -3,11 +3,15 @@ from state import ResearchState
 from tools.llm import llm
 from schemas.critic import CriticResult
 
-APPROVAL_SCORE_THRESHOLD = 85
+# Lowered from 85: a well-grounded report scoring 75+ shouldn't trigger a full
+# rewrite (each rewrite costs several more LLM calls against the free-tier quota).
+APPROVAL_SCORE_THRESHOLD = 75
 
+# Note: plain "error" was removed — it matched harmless phrases like
+# "research failed due to an internal error" and wrongly flagged good reports.
 INACCURACY_SIGNALS = (
-    "inaccura", "incorrect", "error", "mistak", "wrong", "misleading",
-    "not accurate", "factual issue", "false claim",
+    "inaccura", "incorrect", "factual error", "mistak", "wrong", "misleading",
+    "not accurate", "factual issue", "false claim", "fabricat",
 )
 
 
@@ -23,6 +27,25 @@ def _any_text_flags_inaccuracy(critique: dict) -> bool:
     texts = [critique.get("feedback", "")]
     texts += [qi.get("issue", "") for qi in critique.get("question_issues", [])]
     return any(_feedback_flags_inaccuracy(t) for t in texts)
+
+
+def _fallback_critique(reason: str) -> dict:
+    """Used when the critic LLM call fails (rate limit, outage, timeout).
+    The critic is only a quality check, so the finished report is delivered
+    as-is instead of failing the whole pipeline."""
+    return {
+        "score": None,
+        "coverage": None,
+        "clarity": None,
+        "structure": None,
+        "source_quality": None,
+        "accuracy_issue_found": False,
+        "feedback": f"Automated review was skipped ({reason}). The report was delivered without a quality score.",
+        "question_issues": [],
+        "approved": True,
+        "force_stop": True,
+        "review_skipped": True,
+    }
 
 
 def critic(state: ResearchState):
@@ -62,6 +85,9 @@ Any fabrication found under #6, or any other factual error, means
 accuracy_issue_found MUST be true — write your feedback first, then set this
 field to match what the feedback says. They must never contradict each other.
 
+A sub-question whose research failed and which the report honestly describes
+as unanswered is NOT an accuracy issue.
+
 Add an entry to question_issues only for sub-questions with a specific problem
 (factual error or missing depth). Leave it empty if issues are report-wide only.
 
@@ -83,9 +109,16 @@ Return valid JSON:
 
     try:
         response = llm.with_structured_output(CriticResult, method="function_calling").invoke(prompt)
+        if response is None:
+            raise ValueError("critic returned no structured output")
     except Exception as e:
-        logger.error(f"LLM call failed in critic: {e}")
-        raise
+        # Don't throw away a finished report just because the review step failed.
+        logger.error(f"LLM call failed in critic, delivering report unreviewed: {e}")
+        critique = _fallback_critique(type(e).__name__)
+        state["critique"] = critique
+        state["feedback"] = critique["feedback"]
+        logger.info("Critic completed (fallback)")
+        return state
 
     logger.info("Critic response received")
 
