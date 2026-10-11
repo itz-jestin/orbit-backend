@@ -2,13 +2,16 @@ import os
 from langchain_openai import ChatOpenAI
 from langchain_core.rate_limiters import InMemoryRateLimiter
 
-GEMINI_API_KEY = os.getenv("BYNARA_API_KEY", "").strip()
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY is not set in the environment")
+BYNARA_API_KEY = os.getenv("BYNARA_API_KEY", "").strip()
+if not BYNARA_API_KEY:
+    raise RuntimeError("BYNARA_API_KEY is not set in the environment")
 
-# Free tier allows 5 requests/minute for this model: allow 1 request every ~13 seconds
+# Space out requests to stay within the provider's free-tier rate limit.
+# Adjust LLM_RPM on Render once you know Bynara's actual limit.
+LLM_RPM = float(os.getenv("LLM_RPM", "4.5"))
+
 rate_limiter = InMemoryRateLimiter(
-    requests_per_second=4.5 / 60,
+    requests_per_second=LLM_RPM / 60,
     check_every_n_seconds=0.5,
     max_bucket_size=1,
 )
