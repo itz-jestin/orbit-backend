@@ -17,7 +17,7 @@ rate_limiter = InMemoryRateLimiter(
 )
 
 llm = ChatOpenAI(
-    model=os.getenv("LLM_MODEL", "ling-3.0-flash-fin-free"),
+    model=os.getenv("LLM_MODEL", "nemotron-3.5-lightning-free"),
     api_key=BYNARA_API_KEY,
     base_url="https://router.bynara.id/v1",
     temperature=0,
