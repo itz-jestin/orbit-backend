@@ -82,7 +82,7 @@ Return valid JSON:
     logger.info("Sending report to critic LLM")
 
     try:
-        response = llm.with_structured_output(CriticResult).invoke(prompt)
+        response = llm.with_structured_output(CriticResult, method="function_calling").invoke(prompt)
     except Exception as e:
         logger.error(f"LLM call failed in critic: {e}")
         raise
