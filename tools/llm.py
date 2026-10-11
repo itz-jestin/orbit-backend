@@ -4,7 +4,7 @@ from config import OPENAI_API_KEY
 
 
 llm = ChatOpenAI(
-    model="nemotron-3.5-lightning-30b-a3b",
+    model="nvidia/nemotron-3.5-lightning-30b-a3b",
     api_key=OPENAI_API_KEY,
     base_url="https://integrate.api.nvidia.com/v1",
     temperature=0,
