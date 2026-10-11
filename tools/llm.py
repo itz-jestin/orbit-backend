@@ -1,13 +1,12 @@
+import os
 from langchain_openai import ChatOpenAI
-
-from config import OPENAI_API_KEY
 
 
 llm = ChatOpenAI(
-    model="nvidia/nemotron-3.5-lightning-30b-a3b",
-    api_key=OPENAI_API_KEY,
-    base_url="https://integrate.api.nvidia.com/v1",
+    model=os.getenv("LLM_MODEL", "gemini-2.5-flash"),
+    api_key=os.getenv("GEMINI_API_KEY"),
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
     temperature=0,
-    timeout=90,        # seconds — fail fast instead of hanging forever
-    max_retries=1,      # let the client retry transient failures automatically
+    timeout=60,        # Gemini Flash usually answers in seconds
+    max_retries=2,     # retry brief hiccups like rate limits
 )
