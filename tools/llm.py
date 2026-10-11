@@ -8,6 +8,6 @@ llm = ChatOpenAI(
     api_key=OPENAI_API_KEY,
     base_url="https://integrate.api.nvidia.com/v1",
     temperature=0,
-    timeout=30,        # seconds — fail fast instead of hanging forever
+    timeout=120,        # seconds — fail fast instead of hanging forever
     max_retries=2,      # let the client retry transient failures automatically
 )
