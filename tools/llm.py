@@ -14,9 +14,9 @@ rate_limiter = InMemoryRateLimiter(
 )
 
 llm = ChatOpenAI(
-    model=os.getenv("LLM_MODEL", "gemini-3.8-flash"),
-    api_key=GEMINI_API_KEY,
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    model=os.getenv("LLM_MODEL", "ling-3.0-flash-fin-free"),
+    api_key=BYNARA_API_KEY,
+    base_url="https://router.bynara.id/v1",
     temperature=0,
     timeout=60,
     max_retries=2,
