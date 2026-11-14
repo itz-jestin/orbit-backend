@@ -2,6 +2,7 @@ from utils.logger import logger
 from state import ResearchState
 from tools.llm import llm
 from schemas.critic import CriticResult
+from utils.json_utils import extract_json
 
 # Lowered from 85: a well-grounded report scoring 75+ shouldn't trigger a full
 # rewrite (each rewrite costs several more LLM calls against the free-tier quota).
@@ -46,6 +47,19 @@ def _fallback_critique(reason: str) -> dict:
         "force_stop": True,
         "review_skipped": True,
     }
+
+
+def _run_critic_llm(prompt):
+    """Try the strict form-style answer first. Groq sometimes rejects a
+    badly filled form with a 400 error, so retry as plain JSON text."""
+    try:
+        result = llm.with_structured_output(CriticResult, method="function_calling").invoke(prompt)
+        if result is not None:
+            return result
+    except Exception as e:
+        logger.warning(f"Structured critic call failed ({e}); retrying as plain JSON")
+    response = llm.invoke(prompt + "\n\nReturn ONLY the JSON object, with no markdown.")
+    return CriticResult(**extract_json(response.content))
 
 
 def critic(state: ResearchState):
@@ -108,9 +122,7 @@ Return valid JSON:
     logger.info("Sending report to critic LLM")
 
     try:
-        response = llm.with_structured_output(CriticResult, method="function_calling").invoke(prompt)
-        if response is None:
-            raise ValueError("critic returned no structured output")
+        response = _run_critic_llm(prompt)
     except Exception as e:
         # Don't throw away a finished report just because the review step failed.
         logger.error(f"LLM call failed in critic, delivering report unreviewed: {e}")
