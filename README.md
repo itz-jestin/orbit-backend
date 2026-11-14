@@ -3,7 +3,7 @@
 A multi-agent research assistant backend built with FastAPI and LangGraph. Runs a planner → researcher → writer → grounding_check → critic pipeline to answer research queries, with user auth and research history.
 
 **Live API**: https://orbit-backend-lu7c.onrender.com
-**Live App (frontend)**: https://6a7d446e627d58ddd0651cf6--orbitresearchagent.netlify.app/
+**Live App (frontend)**: https://orbitresearchagent.netlify.app/
 
 ## Tech Stack
 
