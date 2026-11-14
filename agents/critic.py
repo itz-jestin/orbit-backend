@@ -22,11 +22,10 @@ def _feedback_flags_inaccuracy(feedback: str) -> bool:
 
 
 def _any_text_flags_inaccuracy(critique: dict) -> bool:
-    """Scan both the overall feedback and every per-question issue for
-    inaccuracy language, since the critic sometimes only names a factual
-    problem inside question_issues rather than the top-level summary."""
-    texts = [critique.get("feedback", "")]
-    texts += [qi.get("issue", "") for qi in critique.get("question_issues", [])]
+    """Scan only the per-question issues for inaccuracy language. The overall
+    feedback often says things like "no fabrications", which the simple word
+    match would wrongly read as a problem."""
+    texts = [qi.get("issue", "") for qi in critique.get("question_issues", [])]
     return any(_feedback_flags_inaccuracy(t) for t in texts)
 
 
